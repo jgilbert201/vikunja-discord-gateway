@@ -36,10 +36,10 @@ public class DiscordService(HttpClient httpClient, IOptions<Config> options, ILo
         Add(lines, "Task", String(task, "title") ?? (taskId.HasValue ? $"#{taskId}" : null));
 
         JsonElement doer = Get(data, "doer");
-        Add(lines, "By", String(doer, "name") ?? String(doer, "username"));
+        Add(lines, "By", DisplayName(doer));
         JsonElement assignee = Get(data, "assignee");
-        Add(lines, eventName == "task.assignee.deleted" ? "Removed assignee" : "Assignee",
-            String(assignee, "name") ?? String(assignee, "username"));
+        Add(lines, eventName == "task.assignee.deleted" ? "Removed assignee" : "Assigned to",
+            DisplayName(assignee));
         JsonElement comment = Get(data, "comment");
         Add(lines, "Comment", PlainText(String(comment, "comment") ?? String(comment, "text")));
         JsonElement attachment = Get(data, "attachment");
@@ -53,7 +53,9 @@ public class DiscordService(HttpClient httpClient, IOptions<Config> options, ILo
         if (eventName is "task.updated" or "task.created")
         {
             Add(lines, "Current description", PlainText(String(task, "description")));
-            Add(lines, "Due", String(task, "due_date"));
+            string? due = String(task, "due_date");
+            if (!string.IsNullOrWhiteSpace(due) && !due.StartsWith("0001-01-01", StringComparison.Ordinal))
+                Add(lines, "Due", due);
             if (task.ValueKind == JsonValueKind.Object && task.TryGetProperty("done", out var done) &&
                 done.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 Add(lines, "Status", done.GetBoolean() ? "Complete" : "Open");
@@ -107,11 +109,17 @@ public class DiscordService(HttpClient httpClient, IOptions<Config> options, ILo
     {
         if (array.ValueKind != JsonValueKind.Array) return null;
         var names = array.EnumerateArray()
-            .Select(item => String(item, "title") ?? String(item, "name") ?? String(item, "username"))
+            .Select(item => FirstNonBlank(String(item, "title"), DisplayName(item)))
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
-        return names.Length == 0 ? "None" : string.Join(", ", names);
+        return names.Length == 0 ? null : string.Join(", ", names);
     }
+
+    private static string? DisplayName(JsonElement person) =>
+        FirstNonBlank(String(person, "name"), String(person, "username"));
+
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private static string? PlainText(string? value)
     {
