@@ -1,19 +1,14 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-EXPOSE 5000
-
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG BUILD_CONFIGURATION=Release
-
 WORKDIR /src
+COPY VikunjaDiscordGateway.csproj ./
+RUN dotnet restore VikunjaDiscordGateway.csproj
+COPY . ./
+RUN dotnet publish VikunjaDiscordGateway.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-COPY ["VikunjaDiscordGateway.csproj", "./"]
-RUN dotnet restore "VikunjaDiscordGateway.csproj"
-
-COPY . .
-RUN dotnet build "./VikunjaDiscordGateway.csproj" -c $BUILD_CONFIGURATION -o /app/build /p:UseAppHost=false
-
-FROM base AS final
-
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
-COPY --from=build /app/build .
+COPY --from=build /app/publish ./
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+USER $APP_UID
 ENTRYPOINT ["dotnet", "VikunjaDiscordGateway.dll"]

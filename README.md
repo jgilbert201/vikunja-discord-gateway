@@ -1,84 +1,42 @@
-﻿# Vikunja Discord Gateway
+# Vikunja Discord Gateway
 
-This is a super simple service that takes [Vikunja](https://github.com/go-vikunja/vikunja)
-webhook events and sends them to a Discord webhook.
+Receives Vikunja webhooks at `POST /webhook` and sends a Discord embed for **every event name**, including task, comment, attachment, relation, project, and user events. The message contains the available project, task, actor, and event details. Unknown future event names are forwarded too.
 
-## Deployment
+The gateway uses `data.task.project_id`, `data.project.id`, or `data.project_id` to route a delivery to a configured project. Events without a matching project use the `DEFAULT` Discord webhook. A missing route returns HTTP 422; a failed Discord delivery returns HTTP 502. `GET /health` returns HTTP 200.
 
-### Docker
+## Build
 
-```bash
-docker run -d \
-  -e VIKUNJADISCORDGATEWAY__DRYRUN=false \
-  -e VIKUNJADISCORDGATEWAY__VIKUNJAURL=http://localhost \
-  -e VIKUNJADISCORDGATEWAY__WEBHOOKS__DEFAULT=https://discord.com/ \
-  -e VIKUNJADISCORDGATEWAY__PROJECTS__1__NAME=MyProject \
-  -e VIKUNJADISCORDGATEWAY__PROJECTS__1__WEBHOOK=Default \
-  -p 8080:8080 \
-  ghcr.io/regner/vikunja-discord-gateway:latest
+From this directory, run:
+
+```sh
+docker build -t vikunja-discord-gateway:local .
 ```
 
-### Docker Compose
+The Dockerfile builds and publishes the .NET 10 application, then runs it on port 8080 in the ASP.NET runtime image.
+
+## Compose
+
+Keep your existing `vikunja` service. Replace the gateway service with:
 
 ```yaml
----
-
-services:
   vikunja-discord-gateway:
-    image: "ghcr.io/regner/vikunja-discord-gateway:latest"
-    restart: "unless-stopped"
+    build:
+      context: /path/to/vikunja-discord-gateway
+    image: vikunja-discord-gateway:local
+    container_name: vikunja-discord-gateway
+    restart: always
     environment:
       VIKUNJADISCORDGATEWAY__DRYRUN: "false"
-      VIKUNJADISCORDGATEWAY__VIKUNJAURL: "http://localhost"
-      VIKUNJADISCORDGATEWAY__WEBHOOKS__DEFAULT: "https://discord.com/"
-      VIKUNJADISCORDGATEWAY__PROJECTS__1__NAME: "MyProject"
-      VIKUNJADISCORDGATEWAY__PROJECTS__1__WEBHOOK: "Default"
+      VIKUNJADISCORDGATEWAY__VIKUNJAURL: "https://fatd.gnetwork.uk/"
+      VIKUNJADISCORDGATEWAY__WEBHOOKS__DEFAULT: "${DISCORD_WEBHOOK_URL}"
+      VIKUNJADISCORDGATEWAY__PROJECTS__3__NAME: "FA To-Do"
+      VIKUNJADISCORDGATEWAY__PROJECTS__3__WEBHOOK: "DEFAULT"
+      # Optional: set the same secret in Vikunja's webhook configuration.
+      # VIKUNJADISCORDGATEWAY__WEBHOOKSECRET: "${VIKUNJA_WEBHOOK_SECRET}"
 ```
 
-## Configuration
+Set `DISCORD_WEBHOOK_URL` in your Compose `.env` file to your actual Discord webhook URL. Change the build context to the checkout path on the Docker host. Build and start with `docker compose up -d --build vikunja-discord-gateway`.
 
-Configuration can be done via environment variables or appsettings.json.
+In Vikunja's project webhook settings, set the target to `http://vikunja-discord-gateway:8080/webhook` and select **all events you want delivered**. The gateway can forward every event it receives, but Vikunja only sends selected events. Your existing `VIKUNJA_OUTGOINGREQUESTS_ALLOWNONROUTABLEIPS: "true"` allows the internal Docker address. For user-level reminder and overdue events, create a separate user webhook with the same target; these use `DEFAULT` when no project is present.
 
-### Environment Variables
-
-```
-VIKUNJADISCORDGATEWAY__DRYRUN: true
-VIKUNJADISCORDGATEWAY__VIKUNJAURL: "http://localhost"
-VIKUNJADISCORDGATEWAY__WEBHOOKS__DEFAULT: "https://discord.com/"
-VIKUNJADISCORDGATEWAY__PROJECTS__1__NAME: "My Project"
-VIKUNJADISCORDGATEWAY__PROJECTS__1__WEBHOOK: "Default"
-```
-
-### Configuration File
-
-```json
-{
-  "VikunjaDiscordGateway": {
-    "DryRun": true,
-    "VikunjaUrl": "http://localhost",
-    "Webhooks": {
-      "TestWebhook": "Empty"
-    },
-    "Projects": {
-      "1": {
-        "Name": "TestProject",
-        "Webhook": "TestWebhook"
-      },
-      "2": {
-        "Name": "OtherProject",
-        "Webhook": "TestWebhook"
-      }
-    }
-  }
-}
-
-```
-
-## Development
-
-### Webhook Structure
-
-- See list of registered webhooks [here](https://github.com/go-vikunja/vikunja/blob/main/pkg/models/listeners.go#L79)
-- Task structure [here](https://github.com/go-vikunja/vikunja/blob/main/pkg/models/tasks.go#L53)
-- User structure [here](https://github.com/go-vikunja/vikunja/blob/main/pkg/user/user.go#L76)
-- Events [here](https://github.com/go-vikunja/vikunja/blob/main/pkg/models/events.go)
+The optional `VIKUNJADISCORDGATEWAY__WEBHOOKSECRET` verifies Vikunja's `X-Vikunja-Signature` using HMAC-SHA256. Set the identical secret on each Vikunja webhook pointing to this gateway. Discord mentions are disabled in outgoing messages.
