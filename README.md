@@ -2,6 +2,8 @@
 
 Receives Vikunja webhooks at `POST /webhook` and sends a Discord embed for **every event name**, including task, comment, attachment, relation, project, and user events. The message contains the available project, task, actor, and event details. Unknown future event names are forwarded too.
 
+For task updates, the embed shows the task's current labels, assignees, description, due date, and status when Vikunja includes them. Vikunja's `task.updated` event does not identify which field changed, so these values are labelled as current state rather than a change history. Comments and descriptions are converted from HTML to readable text. Task and project links are attached to the embed title.
+
 The gateway uses `data.task.project_id`, `data.project.id`, or `data.project_id` to route a delivery to a configured project. Events without a matching project use the `DEFAULT` Discord webhook. A missing route returns HTTP 422; a failed Discord delivery returns HTTP 502. `GET /health` returns HTTP 200.
 
 ## Build
